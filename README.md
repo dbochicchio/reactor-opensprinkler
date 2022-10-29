@@ -58,8 +58,8 @@ controllers:
       # default hash for opendoor
       password: "a6d82bced638de3def1e9bbb4983225c"
 
-      # interval for refresh: default 10 secs
-      # interval: 10000
+      # interval for refresh: default 5 secs
+      # interval: 5000
 
       # timeout: default 15 secs
       # timeout: 15000
@@ -81,11 +81,11 @@ At the moment, you can:
  - operate zones and programs
 
 On my TODO list:
- - enable/disable zones and programs
- - set rain delay to a personalized amount of hours (now it's fixed to one hour)
- - get program state in reliable way
- - handle missing actions
- - move programs from irrigation_zone to a custom capability?
+ - enable/disable zones (programs are ok)
+ - set rain delay to a personalized amount of hours (it's fixed to one hour)
+ - get program state in a reliable way
+ - handle missing actions (?)
+ - move programs from irrigation_zone to a custom capability (?)
 
 ## Support
 

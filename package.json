@@ -1,0 +1,12 @@
+{
+  "name": "reactor-opensprinkler",
+  "version": "0.1.221023",
+  "description": "Reactor Add-on: OpenSprinkler",
+  "main": "./OpenSprinklerController.js",
+  "private": true,
+  "author": "Daniele Bochicchio <daniele@bochicchio.com>",
+  "license": "MIT",
+  "dependencies": {
+    "mqtt": "^4.2.8"
+  }
+}

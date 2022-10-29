@@ -6,27 +6,35 @@ OpenSprinkler Controller must be installed separately. Just download all the fil
 
 Create, if it does not already exist, a directory called *ext* in your Reactor install directory (so it should be at the same level as config, storage, etc.).
 
-```cd /path/to/reactor
-mkdir ext```
+```
+cd /path/to/reactor
+mkdir ext
+```
 
 If you are running Reactor in a docker container, the *ext* directory should be created in the data directory, where your config and storage directories live as indicated above.
 
 Change directory into the new *ext* directory:
 
-```cd ext```
+```
+cd ext
+```
 
 Copy all the files.
 Run the install script. If you are using a "bare metal" install (not a docker container):
 
-```cd OpenSprinklerController
-./install.sh```
+```
+cd OpenSprinklerController
+./install.sh
+```
 
 If you are running Reactor in a docker container, we will open a container shell in which to do the install (the Reactor container must be up and running):
 
-```docker exec -it <container-name> /bin/sh
+```
+docker exec -it <container-name> /bin/sh
 cd /var/reactor/ext/OpenSprinklerController
 ./install.sh
-exit```
+exit
+```
 
 From here, proceed to Basic Configuration below.
 
@@ -34,7 +42,8 @@ From here, proceed to Basic Configuration below.
 
 In order to use OpenSprinklerController, you have to add an entry for it to the controllers section of your *reactor.yaml* file.
 
-```controllers:
+```
+controllers:
   # Your existing controllers will be below the above line.
   # Add the following after the last "- id" line in this
   # section.

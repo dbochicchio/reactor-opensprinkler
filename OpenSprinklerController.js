@@ -6,7 +6,7 @@
  *  Disclaimer: Thi is beta software, so quirks anb bugs are expected. Please report back.
  */
 
-const version = 221029;
+const version = 221030;
 const className = "opensprinkler";
 const ns = "x_opensprinkler"
 const ignoredValue = "@@IGNORED@@"
@@ -93,11 +93,7 @@ module.exports = class OpenSprinklerController extends Controller {
     run() {
         this.log.debug(5, "%1 running", this);
 
-        return new Promise(resolve => {
-            this.refreshStatus();
-
-            resolve(this);
-        });
+        this.refreshStatus();
     }
 
     /* performOnEntity() is used to implement actions on entities */
@@ -138,7 +134,7 @@ module.exports = class OpenSprinklerController extends Controller {
         var currentState = e.getAttribute('irrigation_zone.enabled');
 
         // toggle
-        if (state == undefined) {
+        if (state === undefined) {
             this.log.debug(5, "%1 currentState: %2", this, currentState);
             state = !currentState;
         }
@@ -189,7 +185,7 @@ module.exports = class OpenSprinklerController extends Controller {
         var currentState = e.getAttribute('power_switch.state');
 
         // toggle
-        if (state == undefined) {
+        if (state === undefined) {
             this.log.debug(5, "%1 currentState: %2", this, currentState);
             state = !currentState;
         }
@@ -297,30 +293,35 @@ module.exports = class OpenSprinklerController extends Controller {
         var failures = 0;
         const apiUrl = this.composeUrl(url + qs);
         this.log.info("%1 connecting to %2", this, apiUrl);
-        this.fetchJSON(apiUrl, { timeout: this.config.timeout || 15_000 }).then(async (response) => {
-            this.log.debug(5, "%1 replied with %2", this, response);
-            failures = 0;
 
-            // TODO: parse response, check for errors and notifies UI?
-            for (const attr in attributes) {
-                var attrName = attr.replace(/_ns_/g, ns);
+        while (true) {
+            this.fetchJSON(apiUrl, { timeout: this.config.timeout || 15_000 }).then(async (response) => {
+                this.log.debug(5, "%1 replied with %2", this, response);
+                failures = 0;
 
-                // check if value has changed
-                var value = e.getAttribute(attrName);
-                if (value != attributes[attr]) {
-                    this.log.debug(5, "%1 [%2] setting attribute %3 to %4", this, e.id, attrName, attributes[attr]);
-                    e.setAttribute(attrName, attributes[attr]);
-                }
-            };
-        }).catch(async err => {
-            this.log.err("%1 [postCommandAsync] error: %2", this, err);
-            await delay(Math.min(2_000, (this.config.error_interval || 5_000) * Math.max(1, ++failures - 12)));
+                // TODO: parse response, check for errors and notifies UI?
+                for (const attr in attributes) {
+                    var attrName = attr.replace(/_ns_/g, ns);
 
-            // try 3 times, then
-            if (failures > 3) {
+                    // check if value has changed
+                    var value = e.getAttribute(attrName);
+                    if (value != attributes[attr]) {
+                        this.log.debug(5, "%1 [%2] setting attribute %3 to %4", this, e.id, attrName, attributes[attr]);
+                        e.setAttribute(attrName, attributes[attr]);
+                    }
+                };
+
                 return;
-            }
-        });
+            }).catch(async err => {
+                this.log.err("%1 [postCommandAsync] error: %2", this, err);
+                await delay(Math.min(2_000, (this.config.error_interval || 5_000) * Math.max(1, ++failures - 12)));
+
+                // try 3 times, then
+                if (failures > 3) {
+                    return;
+                }
+            });
+        }
     }
 
     /* refreshStatus() load status and creates the entities */
@@ -451,11 +452,11 @@ module.exports = class OpenSprinklerController extends Controller {
             if (this.failures >= 3) {
                 this.offline();
 
-                e.setAttributes({
-                    reachable: false,
-                    error: true,
-                    message: `${this.config.source} ${String(err)}`
-                }, ns);
+                // let e = this.findEntity("system");
+                // e.setAttributes({
+                //     error: true,
+                //     message: `${this.config.source} ${String(err)}`
+                // }, ns);
             }
         });
     }

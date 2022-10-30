@@ -81,10 +81,10 @@ At the moment, you can:
  - operate zones and programs
 
 On my TODO list:
- - enable/disable zones (programs are ok)
+ - enable/disable zones (programs are already ok)
  - set rain delay to a personalized amount of hours (it's fixed to one hour)
  - get program state in a reliable way
- - handle missing actions (?)
+ - handle missing actions from irrigation_zone (?)
  - move programs from irrigation_zone to a custom capability (?)
 
 ## Support

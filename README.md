@@ -73,17 +73,18 @@ Restart Reactor to make the changes take effect. After that, you should be able 
 ## Capabilities
 
 At the moment, you can:
- - enable/disable the controller (via power_switch)
- - see water level
- - see water delay
- - see sensors status
- - set rain delay programmatically (ie: from your own rain sensors/weather station)
  - operate zones and programs
+ - enable/disable the controller (via power_switch)
+ - enable/disable programs (zones are WIP)
+ - see rain delay
+ - set rain delay programmatically (ie: from your own rain sensors/weather station)
+ - see water level
+ - see additional sensors status (if present)
 
 On my TODO list:
  - enable/disable zones (programs are already ok)
  - set rain delay to a personalized amount of hours (it's fixed to one hour)
- - get program state in a reliable way
+ - get programs status in a reliable way
  - handle missing actions from irrigation_zone (?)
  - move programs from irrigation_zone to a custom capability (?)
 

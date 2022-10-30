@@ -1,23 +1,24 @@
 # Copy and paste everything below (not including) the --- into the
 # "controllers" section of your reactor.yaml file.
 ---
+
   - id: opensprinkler
     name: OpenSprinkler
-    interface: OpenSprinklerController
+    implementation: OpenSprinklerController
     enabled: true
     config:
       #
       # Replace the IP with that of your OpenSprinkler host below.
-      host: "192.168.1.42"
+      host: 192.168.1.41
 
       # default hash for opendoor
-      password: "a6d82bced638de3def1e9bbb4983225c"
+      password: a6d82bced638de3def1e9bbb4983225c
 
       # interval for refresh: default 5 secs
-      # interval: 5000
+      #interval: 5000
 
       # timeout: default 15 secs
-      # timeout: 15000
+      #timeout: 15000
 
       # error_interval: default 10 secs
-      # error_interval: 10000
+      #error_interval: 10000

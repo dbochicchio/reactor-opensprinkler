@@ -49,7 +49,7 @@ controllers:
   # section.
   - id: opensprinkler
     name: OpenSprinkler
-    interface: OpenSprinklerController
+    implementation: OpenSprinklerController
     enabled: true
     config:
       # Replace the IP with that of your OpenSprinkler host below.

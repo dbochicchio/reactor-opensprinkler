@@ -74,7 +74,7 @@ controllers:
       #default_raindelay_duration: 1
 ```
 
-Restart Reactor to make the changes take effect. After that, you should be able to refresh the UI, go the Entities list, clear any existing filters, and choose "OpenSprinkler" from the controllers filter selector. That should then show you two entities: the MQTT controller system entity, and its default group entity. If you don't see this, check the log for errors.
+Restart Reactor to make the changes take effect. After that, you should be able to refresh the UI, go the Entities list, clear any existing filters, and choose "OpenSprinkler" from the controllers filter selector. That should then show you two entities: the OpenSprinkler controller system entity, and its default group entity. If you don't see this, check the log for errors.
 
 ## Capabilities
 

@@ -22,3 +22,9 @@
 
       # error_interval: default 10 secs
       #error_interval: 10000
+
+      # default_zone_duration: default 60 secs
+      #default_zone_duration: 60
+
+      # default_raindelay_duration: default 1 hour
+      #default_raindelay_duration: 1

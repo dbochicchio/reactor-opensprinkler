@@ -53,19 +53,25 @@ controllers:
     enabled: true
     config:
       # Replace the IP with that of your OpenSprinkler host below.
-      host: "192.168.1.42"
+      host: "192.168.1.41"
 
       # default hash for opendoor
       password: "a6d82bced638de3def1e9bbb4983225c"
 
       # interval for refresh: default 5 secs
-      # interval: 5000
+      #interval: 5000
 
       # timeout: default 15 secs
-      # timeout: 15000
+      #timeout: 15000
 
       # error_interval: default 10 secs
-      # error_interval: 10000
+      #error_interval: 10000
+
+      # default_zone_duration: default 60 secs
+      #default_zone_duration: 60
+
+      # default_raindelay_duration: default 1 hour
+      #default_raindelay_duration: 1
 ```
 
 Restart Reactor to make the changes take effect. After that, you should be able to refresh the UI, go the Entities list, clear any existing filters, and choose "OpenSprinkler" from the controllers filter selector. That should then show you two entities: the MQTT controller system entity, and its default group entity. If you don't see this, check the log for errors.
@@ -75,18 +81,18 @@ Restart Reactor to make the changes take effect. After that, you should be able 
 At the moment, you can:
  - operate zones and programs
  - enable/disable the controller (via power_switch)
- - enable/disable programs (zones are WIP)
+ - enable/disable programs and zones
  - see rain delay
  - set rain delay programmatically (ie: from your own rain sensors/weather station)
  - see water level
  - see additional sensors status (if present)
+ - set rain delay to a personalized amount of hours (added in 20221101)
 
 On my TODO list:
- - enable/disable zones (programs are already ok)
- - set rain delay to a personalized amount of hours (it's fixed to one hour)
- - get programs status in a reliable way
+ - get programs status in a reliable way (WIP)
  - handle missing actions from irrigation_zone (?)
  - move programs from irrigation_zone to a custom capability (?)
+ - if MQTT is configured, prefer it to polling (WIP)
 
 ## Support
 

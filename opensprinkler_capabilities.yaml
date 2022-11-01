@@ -7,12 +7,25 @@
 # You can add your own capabilities by adding a "capabilities" section to
 # your own local_mqtt_capabilities.yaml file in your config directory.
 ---
-version: 21344
+version: 221101
 revision: 1
 format: 1
 
 capabilities:
- irrigation_zone:
+  x_opensprinkler:
+    attributes:
+    actions:
+
+  x_opensprinkler_raindelay:
+    attributes:
+    actions:
+      set:
+        arguments:
+          hours:
+            type: int
+
+# TODO: remove when integrated into MSR
+  irrigation_zone:
     attributes:
       state:
         type: string

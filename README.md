@@ -19,22 +19,7 @@ Change directory into the new *ext* directory:
 cd ext
 ```
 
-Copy all the files.
-Run the install script. If you are using a "bare metal" install (not a docker container):
-
-```
-cd OpenSprinklerController
-./install.sh
-```
-
-If you are running Reactor in a docker container, we will open a container shell in which to do the install (the Reactor container must be up and running):
-
-```
-docker exec -it <container-name> /bin/sh
-cd /var/reactor/ext/OpenSprinklerController
-./install.sh
-exit
-```
+Copy all the files. You're ready to run, since no external packages are required.
 
 From here, proceed to Basic Configuration below.
 
@@ -58,6 +43,9 @@ controllers:
       # default hash for opendoor
       password: "a6d82bced638de3def1e9bbb4983225c"
 
+      # MSR MQTT Controller ID for MQTT integration
+      #mqtt_controller: mqtt
+
       # interval for refresh: default 5 secs
       #interval: 5000
 
@@ -78,6 +66,8 @@ Restart Reactor to make the changes take effect. After that, you should be able 
 
 ## Capabilities
 
+If MQTT is configured under Open Sprinkler, after a first update from the controller, it will get all the updates via MQTT. It will refresh the status in particular cases (ie when rain delay is triggered).
+
 At the moment, you can:
  - operate zones and programs
  - enable/disable the controller (via power_switch)
@@ -87,13 +77,14 @@ At the moment, you can:
  - see water level
  - see additional sensors status (if present)
  - set rain delay to a personalized amount of hours (added in 20221101)
+ - MQTT support (added in 20221102, needs last version of both MSR and MQTTController)
 
 On my TODO list:
- - get programs status in a reliable way (WIP)
- - handle missing actions from irrigation_zone (?)
+ - get programs status in a more reliable way (WIP)
+ - handle missing actions from irrigation_zone and return to the UI (?)
  - move programs from irrigation_zone to a custom capability (?)
- - if MQTT is configured, prefer it to polling (WIP)
-
+ - add more custom actions
+ 
 ## Support
 
 This is beta software, so expect quirks and bugs. Support is provided via https://smarthome.community/.

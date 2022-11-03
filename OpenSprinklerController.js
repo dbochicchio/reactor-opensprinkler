@@ -22,9 +22,6 @@ const logsdir = Configuration.getConfig("reactor.logsdir");  /* logs directory p
 // modules
 const util = require("server/lib/util");
 
-//const mqtt = require('mqtt');
-//const { hostname, EOL } = require('os');
-
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
 var impl = false;  /* Implementation data, one copy for all instances, will be loaded by start() later */
@@ -35,7 +32,9 @@ module.exports = class OpenSprinklerController extends Controller {
 
         this.failures = 0;
 
-        this.stopping = false;       /* Flag indicates we're stopping */
+        this.mqttController = undefined;
+
+        this.stopping = false;      /* Flag indicates we're stopping */
     }
 
     /** Start the controller. */
@@ -68,6 +67,10 @@ module.exports = class OpenSprinklerController extends Controller {
         this.log.notice("%1 stopping", this);
         this.stopping = true;
 
+        // unsubscribe from qtt
+        if (this.mqttController !== undefined)
+            this.mqttController.extSubscribeTopic(this);
+
         /* Required ending */
         return await super.stop();
     }
@@ -79,32 +82,221 @@ module.exports = class OpenSprinklerController extends Controller {
         this.refreshStatus();
     }
 
+    /* refreshStatus() load status and creates the entities */
+    refreshStatus() {
+        if (this.stopping) return;
+
+        const apiUrl = this.composeUrl("ja?");
+        this.log.notice("%1 [refreshStatus] - started", this);
+        this.fetchJSON(apiUrl, { timeout: this.config.timeout || 15_000 }).then(async (response) => {
+            this.log.debug(5, "%1 replied with %2", this, response);
+            this.failures = 0;
+
+            this.log.debug(5, "%1 Number of stations: %2", this, response?.stations?.snames?.length ?? 0);
+            // get stations
+            if (response?.stations?.snames)
+                response.stations.snames.forEach((station, index) => {
+                    var id = `os_station_${index + 1}`;
+
+                    // ● ps: Program status data: each element is a 3-field array that stores the [pid,rem,start] of a station, wher
+                    var ps = response.settings.ps[index];
+                    var state = response.status.sn[index] > 0;
+
+                    // TODO: string sensor?
+                    this.mapDevice(id, station || `Station #${index + 1}`,
+                        ["irrigation_zone", "power_switch", "toggle", ns], "irrigation_zone.state",
+                        {
+                            //"irrigation_zone.duration": -1, // TODO? not supported?
+                            "irrigation_zone.remaining": ps[1],
+                            "irrigation_zone.last_run": ps[2] > 0 ? ps[2] : ignoredValue,
+                            //"irrigation_zone.next_run": -1, // TODO? not supported?
+                            "irrigation_zone.enabled": (response.stations.stn_dis[parseInt(index / 8)] & (1 << (index % 8))) == 0,
+                            "irrigation_zone.state": state,
+                            "power_switch.state": state,
+                            "toggle.state": state,
+                            "_ns_.scheduled": ps[0] > 0,
+                            "_ns_.id": index,
+                            "_ns_.type": "zone"
+                        });
+                });
+
+            // get programs
+            var programs = response?.programs?.length ?? response?.programs?.nprogs ?? 0;
+            this.log.debug(5, "%1 Number of programs: %2", this, programs);
+            if (programs > 0) {
+                for (let index = 0; index < programs; index++) {
+                    var id = `os_program_${index + 1}`;
+                    var pd = response.programs.pd[index];
+                    var state = ((pd[0] >> 0) & 1) ? true : false;
+
+                    this.log.debug(5, "%1 Program #%2: %3", this, index, state);
+
+                    // https://github.com/OpenSprinkler/OpenSprinkler-App/blob/6116c514cbf3a5f25613ab6dbad8ddafc00ceec1/www/js/main.js#L8408
+                    this.mapDevice(id, pd[5] || `Program #${index + 1}`,
+                        ["irrigation_zone", "power_switch", "toggle", ns], "irrigation_zone.state",
+                        {
+                            //"irrigation_zone.duration": -1, // TODO?
+                            //"irrigation_zone.remaining": -1, // TODO?
+                            //"irrigation_zone.last_run": -1, // TODO
+                            //"irrigation_zone.next_run": -1, // TODO
+                            "irrigation_zone.enabled": ((pd[0] >> 0) & 1) ? true : false,
+                            "irrigation_zone.state": state,
+                            "power_switch.state": state,
+                            "toggle.state": state,
+                            "_ns_.id": index,
+                            "_ns_.type": "program",
+                            "_ns_.programflag": pd[0],
+                            "_ns_.programdata": pd[4], //?.join(',') || '',
+                            "_ns_.weather": ((pd[0] >> 1) & 1) ? true : false
+                            // "_ns_.days_even": (((pd[0] >> 2) & 0x03) === 2),
+                            // "_ns_.days_odd": (((pd[0] >> 2) & 0x03) === 1),
+                            // "_ns_.days_hasinterval": (((pd[0] >> 4) & 0x03) === 3),
+                        });
+                }
+            }
+
+            // sensors
+            let rdState = (response?.settings?.rd || 0) == 1;
+            this.mapDevice("os_raindelay", "Rain Delay", ["binary_sensor", "power_switch", "toggle", "string_sensor", `${ns}_raindelay`, ns], "binary_sensor.state",
+                {
+                    "binary_sensor.state": rdState,
+                    "power_switch.state": rdState,
+                    "toggle.state": rdState,
+                    "string_sensor.value": response.settings.rdst,
+                    "_ns_.type": "raindelay"
+                });
+
+            this.mapSensorDevice("1", response?.settings?.sn1, response?.settings?.sn1t, response?.settings?.sn1o);
+            this.mapSensorDevice("2", response?.settings?.sn2, response?.settings?.sn2t, response?.settings?.sn2o);
+
+            this.mapDevice("os_waterlevel", "Water Level", ["string_sensor", ns], "string_sensor.value",
+                {
+                    "string_sensor.value": response?.options?.wl || 0,
+                    "string_sensor.units": "%",
+                    "_ns_.type": "waterlevel",
+                });
+
+            // controller status
+            var lrun = response?.settings?.lrun;
+
+            this.mapDevice("system", 'Open Sprinkler', ["power_switch", "toggle", "string_sensor", ns], "string_sensor.value",
+                {
+                    "power_switch.state": (response?.settings?.en || response?.options?.den == 0) == 1,
+                    "toggle.state": (response?.settings?.en || response?.options?.den == 0) == 1,
+                    "string_sensor.value": (response?.settings?.en || response?.options?.den == 0) == 1 ? "Enabled" : "Disabled",
+                    "_ns_.type": "controller",
+                    "_ns_.current": (response?.settings?.curr || 0),
+                    "_ns_.hardwareVersion": this.getHardwareVersion(response?.options?.hwv, response?.options?.hwt),
+                    "_ns_.weatheradjustmentmode": (response?.settings?.uwt || 0),
+                    "_ns_.rssi": (response?.settings?.RSSI),
+                    "_ns_.firmwareversion": (response?.options?.fwv || '0'),
+                    "_ns_.lastboot": (response?.settings?.lupt || 0),
+                    "_ns_.lastbootreason": (response?.settings?.lrbtc || 0),
+                    "_ns_.boards": (response?.settings?.nbrd || 1),
+                    "_ns_.lastrun": (lrun)
+                });
+
+            // update last run in child
+            if (lrun) {
+                // lrun: Last run record, which stores the [station index, program index, duration, end time] of the last run station.
+                var stationId = lrun[0];
+                var programId = lrun[1];
+                var duration = lrun[2];
+                var endTime = lrun[3];
+
+                if (duration > 0 && endTime > 0) {
+                    this.updateEntityAttributes(this.findEntity(`os_program_${programId + 1}`), {
+                        "irrigation_zone.last_run": endTime - duration,
+                        "irrigation_zone.duration": duration,
+                    });
+
+                    this.updateEntityAttributes(this.findEntity(`os_station_${stationId + 1}`), {
+                        "irrigation_zone.last_run": endTime - duration,
+                        "irrigation_zone.duration": duration,
+                    });
+                }
+            }
+
+            // MQTT support
+            var useMqtt = false;
+            if (response?.settings?.mqtt?.en == 1) {
+
+                if (this.mqttController === undefined) {
+                    this.log.notice("%1 [refreshStatus] - MQTT support enabled", this);
+
+                    // ignored ATM
+                    // var mqtt_host = response?.settings?.mqtt?.host;
+                    // var mqtt_port = response?.settings?.mqtt?.port;
+                    // var mqtt_username = response?.settings?.mqtt?.user;
+                    // var mqtt_password = response?.settings?.mqtt?.pass;
+
+                    useMqtt = this.registerMqttController();
+                }
+                else
+                    useMqtt = true;
+            }
+
+            this.online();
+
+            this.log.notice("%1 [refreshStatus] - completed - MQTT: %2", this, useMqtt);
+
+            if (!useMqtt)
+                this.startDelay(this.config.interval || 5_000);
+        }).catch(err => {
+            this.log.err("%1 [refreshStatus] error: %2", this, err);
+            this.startDelay(Math.min(120_000, (this.config.error_interval || 5_000) * Math.max(1, ++this.failures - 12)));
+
+            if (this.failures >= 3) {
+                this.offline();
+            }
+        });
+    }
+
+    /* init MQTT message handler, if needed */
+    registerMqttController() {
+        this.log.notice("%1 [registerMqttController] started - %2", this, this.mqttController);
+        if (this.mqttController === undefined) {
+            try {
+                var mqttControllerId = this.config.mqtt_controller || 'mqtt';
+                this.mqttController = this.getStructure().getControllerByID(mqttControllerId);
+
+                if (this.mqttController !== undefined) {
+                    this.log.notice("%1 [registerMqttController] MQTT topic subscription in progress for %2", this, mqttControllerId);
+                    // Using bind() to use a method of your controller as handler:
+                    this.mqttController.extSubscribeTopic(this, "opensprinkler/#", this.onMqttMessage.bind(this));
+                    return true; // no need to refresh
+                }
+                else {
+                    this.log.err("%1 [registerMqttController] MQTT is configured, but can't find '%2' under MSR. Check your config.", this, mqttControllerId);
+                    return false;
+                }
+            } catch (err) {
+                this.log.err("%1 [registerMqttController] error: %2", this, err);
+            }
+        }
+
+        return this.mqttController !== undefined; // if MQTT setup is not valid, keep polling
+    }
+
     /* performOnEntity() is used to implement actions on entities */
     async performOnEntity(entity, actionName, params) {
         this.log.notice("%1 [performOnEntity] %3 - %2 - %4", this, actionName, entity, params);
 
         switch (actionName) {
-            // irrigation
             case 'irrigation_zone.run':
+            case 'power_switch.on':
                 return this.switchEntityAsync(entity, true);
             case 'irrigation_zone.stop':
+            case 'power_switch.off':
                 return this.switchEntityAsync(entity, false);
             case 'irrigation_zone.enable':
                 return this.enableEntityAsync(entity, true);
             case 'irrigation_zone.disable':
                 return this.enableEntityAsync(entity, false);
-            case 'irrigation_zone.set':
-                return this.switchEntityAsync(entity, params.state, params?.duration);
-            // power_switch
-            case 'power_switch.on':
-                return this.switchEntityAsync(entity, true);
-            case 'power_switch.off':
-                return this.switchEntityAsync(entity, false);
             case 'power_switch.set':
-                return this.switchEntityAsync(entity, params?.state);
-            // toggle
+            case 'irrigation_zone.set':
             case 'toggle.toggle':
-                return this.switchEntityAsync(entity);
+                return this.switchEntityAsync(entity, params?.state, params?.duration);
             // x_opensprinkler
             case 'x_opensprinkler_raindelay.set':
                 return this.switchEntityAsync(entity, true, params?.hours);
@@ -113,7 +305,7 @@ module.exports = class OpenSprinklerController extends Controller {
         return super.performOnEntity(entity, actionName, params);
     }
 
-
+    /* calls the APIs to enable/disable zones and programs */
     async enableEntityAsync(e, state) {
         this.log.notice("%1 enableEntityAsync(%2, %3, %4)", this, e, state);
 
@@ -135,11 +327,7 @@ module.exports = class OpenSprinklerController extends Controller {
         var id = e.getAttribute(`${ns}.id`) || '-1';
         var attributes = {};
         var command;
-        var cmdParams = {
-            "en": state ? "1" : "0",	                    // enable flag
-            "sid": id,	                          	        // station id, for zone
-            "pid": id,          	                        // program id, for programs
-        };
+        var cmdParams;
 
         if (isZone) {
             command = "cs";
@@ -148,7 +336,8 @@ module.exports = class OpenSprinklerController extends Controller {
             let systemE = this.findEntity("system");
             let nbrd = systemE.getAttribute(`${ns}.boards`); // number of boards
             this.log.debug(5, "%1 [enableEntityAsync] Zones - Number of boards: %2", this, nbrd);
-            // a special flag need to be computed
+
+            // a special flag need to be computed - see docs
             for (let bid = 0; bid < nbrd; bid++) {
                 cmdParams["d" + bid] = 0;
 
@@ -178,7 +367,10 @@ module.exports = class OpenSprinklerController extends Controller {
         }
         else if (isProgram) {
             command = "cp";
-
+            cmdParams = {
+                "en": state ? "1" : "0",	                    // enable flag
+                "pid": id,          	                        // program id, for programs
+            };
             attributes = {
                 "irrigation_zone.enabled": state,
             };
@@ -192,6 +384,7 @@ module.exports = class OpenSprinklerController extends Controller {
         }
     }
 
+    /* calls the APIs to turn on/off zones, programs, controller and rain delay */
     async switchEntityAsync(e, state, duration) {
         this.log.notice("%1 switchEntityAsync(%2, %3, %4)", this, e, state, duration);
 
@@ -270,11 +463,12 @@ module.exports = class OpenSprinklerController extends Controller {
             };
         }
         else if (isRainDelay) {
+            command = "cv"; // change variables command to enable/disable controller
+
             var rdHours = (!state || duration == 0) ? 0 : duration || this.config.default_raindelay_duration || 1;
             cmdParams = {
                 "rd": rdHours, // rain delay in hours - 0 if disabled
             };
-            command = "cv"; // change variables command to enable/disable controller
 
             var rdDate = new Date();
             attributes = {
@@ -324,6 +518,7 @@ module.exports = class OpenSprinklerController extends Controller {
         this.fetchJSON(apiUrl, { timeout: this.config.timeout || 15_000 }).then(async (response) => {
             this.log.debug(5, "%1 [postCommandAsync] %2", this, response);
 
+            // todo: integrate handleResponse
             if (response.result == 1)
                 this.updateEntityAttributes(e, attributes);
         }).catch(async err => {
@@ -338,173 +533,10 @@ module.exports = class OpenSprinklerController extends Controller {
         });
     }
 
-    /* refreshStatus() load status and creates the entities */
-    refreshStatus() {
-        if (this.stopping) return;
-
-        const apiUrl = this.composeUrl("ja?");
-        this.log.notice("%1 [refreshStatus] - started", this);
-        this.fetchJSON(apiUrl, { timeout: this.config.timeout || 15_000 }).then(async (response) => {
-            this.log.debug(5, "%1 replied with %2", this, response);
-            this.failures = 0;
-
-            this.log.debug(5, "%1 Number of stations: %2", this, response?.stations?.snames?.length ?? 0);
-            // get stations
-            if (response?.stations?.snames)
-                response.stations.snames.forEach((station, index) => {
-                    var id = `os_station_${index + 1}`;
-
-                    // ● ps: Program status data: each element is a 3-field array that stores the [pid,rem,start] of a station, wher
-                    var ps = response.settings.ps[index];
-                    var state = response.status.sn[index] > 0;
-
-                    // TODO: string sensor?
-                    this.mapDevice(id, station || `Station #${index + 1}`,
-                        ["irrigation_zone", "power_switch", "toggle", ns], "irrigation_zone.state",
-                        {
-                            //"irrigation_zone.duration": -1, // TODO? not supported?
-                            "irrigation_zone.remaining": ps[1],
-                            "irrigation_zone.last_run": ps[2] > 0 ? ps[2] : ignoredValue,
-                            //"irrigation_zone.next_run": -1, // TODO? not supported?
-                            "irrigation_zone.enabled": (response.stations.stn_dis[parseInt(index / 8)] & (1 << (index % 8))) == 0,
-                            "irrigation_zone.state": state,
-                            "power_switch.state": state,
-                            "toggle.state": state,
-                            "_ns_.scheduled": ps[0] > 0,
-                            "_ns_.id": index,
-                            "_ns_.type": "zone"
-                        });
-                });
-
-            // get programs
-            var programs = response?.programs?.length ?? response?.programs?.nprogs ?? 0;
-            this.log.debug(5, "%1 Number of programs: %2", this, programs);
-            if (programs > 0) {
-                for (let index = 0; index < programs; index++) {
-                    var id = `os_program_${index + 1}`;
-                    var pd = response.programs.pd[index];
-                    var state = ((pd[0] >> 0) & 1) ? true : false;
-
-                    this.log.debug(5, "%1 Program #%2: %3", this, index, state);
-
-                    // https://github.com/OpenSprinkler/OpenSprinkler-App/blob/6116c514cbf3a5f25613ab6dbad8ddafc00ceec1/www/js/main.js#L8408
-                    this.mapDevice(id, pd[5] || `Program #${index + 1}`,
-                        ["irrigation_zone", "power_switch", "toggle", ns], "irrigation_zone.state",
-                        {
-                            //"irrigation_zone.duration": -1, // TODO?
-                            //"irrigation_zone.remaining": -1, // TODO?
-                            //"irrigation_zone.last_run": -1, // TODO
-                            //"irrigation_zone.next_run": -1, // TODO
-                            "irrigation_zone.enabled": ((pd[0] >> 0) & 1) ? true : false,
-                            "irrigation_zone.state": state,
-                            "power_switch.state": state,
-                            "toggle.state": state,
-                            "_ns_.id": index,
-                            "_ns_.type": "program",
-                            "_ns_.programflag": pd[0],
-                            "_ns_.programdata": pd[4], //?.join(',') || '',
-                            "_ns_.weather": ((pd[0] >> 1) & 1) ? true : false
-                            // "_ns_.days_even": (((pd[0] >> 2) & 0x03) === 2),
-                            // "_ns_.days_odd": (((pd[0] >> 2) & 0x03) === 1),
-                            // "_ns_.days_hasinterval": (((pd[0] >> 4) & 0x03) === 3),
-                        });
-                }
-            }
-
-            // sensors
-            let rdState = (response?.settings?.rd || 0) == 1;
-            this.mapDevice("os_raindelay", "Rain Delay", ["binary_sensor", "power_switch", "toggle", "string_sensor", ns + "_raindelay", ns], "binary_sensor.state",
-                {
-                    "binary_sensor.state": rdState,
-                    "power_switch.state": rdState,
-                    "toggle.state": rdState,
-                    "string_sensor.value": response.settings.rdst,
-                    "_ns_.type": "raindelay"
-                });
-
-            this.mapSensorDevice("1", response?.settings?.sn1, response?.settings?.sn1t, response?.settings?.sn1o);
-            this.mapSensorDevice("2", response?.settings?.sn2, response?.settings?.sn2t, response?.settings?.sn2o);
-
-            this.mapDevice("os_waterlevel", "Water Level", ["string_sensor", ns], "string_sensor.value",
-                {
-                    "string_sensor.value": response?.options?.wl || 0,
-                    "string_sensor.units": "%",
-                    "_ns_.type": "waterlevel",
-                });
-
-            // controller status
-            var lrun = response?.settings?.lrun;
-
-            this.mapDevice("system", 'Open Sprinkler', ["power_switch", "toggle", "string_sensor", ns], "string_sensor.value",
-                {
-                    "power_switch.state": (response?.settings?.en || response?.options?.den == 0) == 1,
-                    "toggle.state": (response?.settings?.en || response?.options?.den == 0) == 1,
-                    "string_sensor.value": (response?.settings?.en || response?.options?.den == 0) == 1 ? "Enabled" : "Disabled",
-                    "_ns_.type": "controller",
-                    "_ns_.current": (response?.settings?.curr || 0),
-                    "_ns_.hardwareVersion": this.getHardwareVersion(response?.options?.hwv),
-                    "_ns_.weatheradjustmentmode": (response?.settings?.uwt || 0),
-                    "_ns_.rssi": (response?.settings?.RSSI),
-                    "_ns_.firmwareversion": (response?.options?.fwv || '0'),
-                    "_ns_.lastboot": (response?.settings?.lupt || 0),
-                    "_ns_.lastbootreason": (response?.settings?.lrbtc || 0),
-                    "_ns_.boards": (response?.settings?.nbrd || 1),
-                    "_ns_.lastrun": (lrun)
-                });
-
-            // update last run in child
-            if (lrun) {
-                // lrun: Last run record, which stores the [station index, program index, duration, end time] of the last run station.
-                var station = lrun[0];
-                var program = lrun[1];
-                var duration = lrun[2];
-                var endTime = lrun[3];
-
-                if (duration > 0 && endTime > 0) {
-                    this.updateEntityAttributes(this.findEntity(`os_program_${program + 1}`), {
-                        "irrigation_zone.last_run": endTime - duration,
-                        "irrigation_zone.duration": duration,
-                    });
-
-                    this.updateEntityAttributes(this.findEntity(`os_station_${station + 1}`), {
-                        "irrigation_zone.last_run": endTime - duration,
-                        "irrigation_zone.duration": duration,
-                    });
-                }
-            }
-
-            // MQTT support
-            var needsRefresh = true;
-            if (response?.settings?.mqtt?.en == 1) {
-                this.log.notice("%1 [refreshStatus] - MQTT support enabled", this);
-
-                // ignored?
-                var mqtt_host = response?.settings?.mqtt?.host;
-                var mqtt_port = response?.settings?.mqtt?.port;
-                var mqtt_username = response?.settings?.mqtt?.user;
-                var mqtt_password = response?.settings?.mqtt?.pass;
-
-                // needsRefresh = false;
-                // TODO: connect to MQTT broker and pass incoming message to onMqttMessage()
-            }
-
-            this.online();
-
-            this.log.notice("%1 [refreshStatus] - completed", this);
-
-            if (needsRefresh)
-                this.startDelay(this.config.interval || 5_000);
-        }).catch(err => {
-            this.log.err("%1 [refreshStatus] error: %2", this, err);
-            this.startDelay(Math.min(120_000, (this.config.error_interval || 5_000) * Math.max(1, ++this.failures - 12)));
-
-            if (this.failures >= 3) {
-                this.offline();
-            }
-        });
-    }
-
+    /* handle incoming messages from MQTT broker */
     onMqttMessage(topic, value) {
+        this.log.notice("%1 [onMqttMessage] %2: %3", this, topic, value);
+
         // opensprinkler/availability: online/offline
         // opensprinkler/system: this topic receives {"state":"started"} message when the controller boots.
         // opensprinkler/station/x: where x is the index (starting from 0) of the station/zone. For example, the first zone is 0, the second zone is 1 and so on.
@@ -516,26 +548,31 @@ module.exports = class OpenSprinklerController extends Controller {
         // opensprinkler/sensor/flow: this topic receives {"count":cc,"volume":vv} when the flow sensor generates data (usually when a zone finishes running), where cc 
         //   is the flow count, and vv is the amount of volume.
 
-        var needRefresh = false;
+        var needsRefresh = false;
         var attributes;
         var e;
 
         if (topic == "opensprinkler/availability") {
-            if (value?.state == "online") {
-                needRefresh = true;
+            this.log.notice("%1 [onMqttMessage] availability: %2", this, value);
+            if (value == "online") {
+                needsRefresh = true;
                 //this.online();
             }
             else
                 this.offline();
         }
         else if (topic.startsWith("opensprinkler/station/")) {
-            var id = topic.split('/')[2];
-            var state = value?.state == "1";
-            var duration = value?.duration ?? 0;
+            var json = JSON.parse(value);
+            var id = parseInt(topic.split('/')[2]);
+            var state = json?.state == "1";
+            var duration = json?.duration ?? 0;
+
+            this.log.notice("%1 [onMqttMessage] station: %2, %3, %4", this, id, state, duration);
+
             e = this.findEntity(`os_station_${id + 1}`);
 
             attributes = {
-                "irrigation_zone.state.value": state,
+                "irrigation_zone.state": state,
                 "power_switch.state": state,
                 "toggle.state": state,
                 "irrigation_zone.duration": duration,
@@ -551,12 +588,16 @@ module.exports = class OpenSprinklerController extends Controller {
             topic == "opensprinkler/sensor1" ||
             topic == "opensprinkler/sensor2"
         ) {
-            var state = value?.state == "1";
-            e = this.findEntity(
-                topic == "opensprinkler/sensor1" ? "os_sensor1" :
-                    topic == "opensprinkler/sensor1" ? "os_sensor2" :
-                        "os_raindelay"
-            );
+            var id = topic == "opensprinkler/sensor1" ? "os_sensor1" :
+                topic == "opensprinkler/sensor1" ? "os_sensor2" :
+                    "os_raindelay";
+
+            var json = JSON.parse(value);
+            var state = json?.state == "1";
+
+            this.log.notice("%1 [onMqttMessage] sensor: %2, %3", this, id, state);
+
+            e = this.findEntity(id);
             attributes = {
                 "binary_sensor.value": state,
                 "power_switch.state": state,
@@ -565,16 +606,19 @@ module.exports = class OpenSprinklerController extends Controller {
 
             if (topic == "opensprinkler/raindelay") {
                 // mqtt messages does not contain duration: a refresh is needed
-                needRefresh = true;
+                needsRefresh = true;
             }
+        }
+        else {
+            this.log.notice("%1 [onMqttMessage] message ignored: %2, %3", this, topic, value);
         }
 
         // update attributes
         this.updateEntityAttributes(e, attributes);
 
-        // OS mqtt message are very limited, so we need to request a refresh from API in a couple of circumstances...
-        if (needRefresh)
-            refreshStatus();
+        // OS mqtt message are very limited, so we need to request a refresh from API to sync everything
+        if (needsRefresh)
+            this.refreshStatus();
     }
 
     /* Maps a device into a MSR entity */
@@ -650,13 +694,14 @@ module.exports = class OpenSprinklerController extends Controller {
             for (const attr in attributes) {
                 var newValue = attributes[attr];
 
-                // check for and skip unchanged values
+                // skip ignored values
                 if (ignoredValue != newValue) {
                     // check if value has changed
                     var attrName = attr.replace(/_ns_/g, ns);
                     var value = e.getAttribute(attrName);
 
-                    var changed = JSON.stringify(value) != JSON.stringify(newValue);
+                    // check for and skip unchanged values
+                    var changed = value != newValue && JSON.stringify(value) != JSON.stringify(newValue);
                     if (changed) {
                         var id = e.getCanonicalID();
                         this.log.notice("%1 [%2] %3: %4 => %5", this, id, attrName, newValue, value);
@@ -672,11 +717,11 @@ module.exports = class OpenSprinklerController extends Controller {
     }
 
     // https://github.com/OpenSprinkler/OpenSprinkler-App/blob/6116c514cbf3a5f25613ab6dbad8ddafc00ceec1/www/js/main.js#L10854
-    getHardwareVersion(rawHardwareVersion) {
-        if (typeof rawHardwareVersion === 'string') {
-            return rawHardwareVersion;
+    getHardwareVersion(hwv, hwt) {
+        if (typeof hwv === 'string') {
+            return hwv;
         } else {
-            switch (rawHardwareVersion) {
+            switch (hwv) {
                 case 64:
                     return 'OSPi';
                 case 128:
@@ -686,8 +731,25 @@ module.exports = class OpenSprinklerController extends Controller {
                 case 255:
                     return 'Demo';
                 default:
-                    return (((rawHardwareVersion / 10) >> 0) % 10) + '.' + (rawHardwareVersion % 10);
+                    return 'OS ' + (((hwv / 10) >> 0) % 10) + '.' + (hwv % 10) + this.getHWType(hwt);
             }
         }
     }
+
+    getHWType(hwt) {
+        if (typeof hwt !== "number" || hwt === 0) {
+            return "";
+        }
+
+        if (hwt === 172) {
+            return " - AC";
+        } else if (hwt === 220) {
+            return " - DC";
+        } else if (hwt === 26) {
+            return " - Latching";
+        } else {
+            return "";
+        }
+    }
+
 };

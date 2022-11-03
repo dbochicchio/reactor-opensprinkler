@@ -1,16 +1,21 @@
-# OpenSprinklerController Change Log
+# OpenSprinklerController Changelog
 
-## 221029
+## 221102
 
-* Initial release version.
+* MQTT integration (requires MSR and MQTTController v 22305)
+* Bug fixing and refactoring
 
-## 221030
-
-* First alpha release. Mostly bug fixing.
-
-# 221101
+## 221101
 
 * Better retry logic for commands
 * Rain Delay with dedicated actions (x_opensprinkler_raindelay.set)
 * parsing logic for mqtt integration
 * Refactoring
+
+## 221030
+
+* First beta release. Mostly bug fixing.
+
+## 221029
+
+* Initial alpha release version.

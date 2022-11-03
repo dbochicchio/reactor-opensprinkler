@@ -23,37 +23,3 @@ capabilities:
         arguments:
           hours:
             type: int
-
-# TODO: remove when integrated into MSR
-  irrigation_zone:
-    attributes:
-      state:
-        type: string
-        values:
-          true: running
-          false: stopped
-      duration:
-        type: uint
-      remaining:
-        type: uint
-      last_run:
-        type: ui8
-      next_run:
-        type: ui8
-      enabled:
-        type: bool
-        default: null
-    actions:
-      run: {}
-      stop: {}
-      enable: {}
-      disable: {}
-      set:
-        arguments:
-          state:
-            type: string
-            values:
-              true: running
-              false: stopped
-          duration:
-            type: int

@@ -14,6 +14,9 @@
       # default hash for opendoor
       password: a6d82bced638de3def1e9bbb4983225c
 
+      # MSR MQTT Controller ID for MQTT integration
+      #mqtt_controller: mqtt
+
       # interval for refresh: default 5 secs
       #interval: 5000
 

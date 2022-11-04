@@ -1,10 +1,10 @@
 {
-  "name": "reactor-opensprinkler",
-  "version": "0.1.221102",
-  "description": "Reactor Add-on: OpenSprinkler",
-  "homepage": "https://github.com/dbochicchio/reactor-opensprinkler",
-  "main": "./OpenSprinklerController.js",
-  "private": true,
-  "author": "Daniele Bochicchio <daniele@bochicchio.com>",
-  "license": "MIT"
+	"name": "reactor-opensprinkler",
+	"version": "0.1.221104",
+	"description": "Reactor Add-on: OpenSprinkler",
+	"homepage": "https://github.com/dbochicchio/reactor-opensprinkler",
+	"main": "./OpenSprinklerController.js",
+	"private": true,
+	"author": "Daniele Bochicchio <daniele@bochicchio.com>",
+	"license": "MIT"
 }

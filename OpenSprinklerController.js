@@ -6,7 +6,7 @@
  *  Disclaimer: Thi is beta software, so quirks anb bugs are expected. Please report back.
  */
 
-const version = 221101;
+const version = 221104;
 const className = "opensprinkler";
 const ns = "x_opensprinkler"
 const ignoredValue = "@@IGNORED@@"
@@ -519,8 +519,11 @@ module.exports = class OpenSprinklerController extends Controller {
             this.log.debug(5, "%1 [postCommandAsync] %2", this, response);
 
             // todo: integrate handleResponse
-            if (response.result == 1)
+            if (response?.result == 1)
                 this.updateEntityAttributes(e, attributes);
+            else {
+                this.sendError('Internal error for controller {1:q}: {0}. See logs. ', response?.result, this);
+            }
         }).catch(async err => {
             this.log.err("%1 [postCommandAsync] error: %2", this, err);
 
@@ -644,6 +647,7 @@ module.exports = class OpenSprinklerController extends Controller {
     mapDevice(id, name, capabilities, defaultAttribute, attributes) {
         this.log.debug(5, "%1 mapDevice(%2, %3, %4, %5, %6)", this, id, name, capabilities, defaultAttribute, attributes);
 
+        var isNew = false;
         let e = this.findEntity(id);
 
         try {
@@ -652,6 +656,7 @@ module.exports = class OpenSprinklerController extends Controller {
                 e = this.getEntity(className, id);
                 e.setName(name);
                 e.setType(className);
+                isNew = true;
             }
             // else {
             //     e.setName(name);
@@ -676,6 +681,9 @@ module.exports = class OpenSprinklerController extends Controller {
 
             if (defaultAttribute)
                 e.setPrimaryAttribute(defaultAttribute);
+
+            if (isNew)
+                this.sendNotice('Discovered new device {0:q} ({1}) on controller {2:q}', name, id, this);
 
             // extended capabilities
             // e.extendCapability(ns);

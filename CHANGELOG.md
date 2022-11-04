@@ -1,5 +1,9 @@
 # OpenSprinklerController Changelog
 
+## 221104
+
+* UI Notifications for discovered devices and communication errors
+
 ## 221102
 
 * MQTT integration (requires MSR and MQTTController v 22305)

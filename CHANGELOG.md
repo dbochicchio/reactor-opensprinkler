@@ -1,9 +1,8 @@
 # OpenSprinklerController Changelog
 
-## 221230
+## 221104
 
-* Fix for MQTT unsubscribe bug on stop
-* Support for sys_system.restart to force a refresh
+* UI Notifications for discovered devices and communication errors
 
 ## 221102
 

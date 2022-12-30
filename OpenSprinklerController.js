@@ -6,7 +6,7 @@
  *  Disclaimer: Thi is beta software, so quirks anb bugs are expected. Please report back.
  */
 
-const version = 221230;
+const version = 221104;
 const className = "opensprinkler";
 const ns = "x_opensprinkler"
 const ignoredValue = "@@IGNORED@@"
@@ -17,10 +17,6 @@ const Logger = require("server/lib/Logger");
 Logger.getLogger('OpenSprinklerController', 'Controller').always("Module OpenSprinklerController v%1", version);
 
 const Configuration = require("server/lib/Configuration");
-const logsdir = Configuration.getConfig("reactor.logsdir");  /* logs directory path if you need it */
-
-// modules
-const util = require("server/lib/util");
 
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
@@ -37,13 +33,13 @@ module.exports = class OpenSprinklerController extends Controller {
         this.stopping = false;      /* Flag indicates we're stopping */
     }
 
-    /** Start the controller. */
+    /* Start the controller. */
     async start() {
-        if (this.config.host == undefined) {
+        if (!this.config.host) {
             return Promise.reject("No host configured");
         }
 
-        if (this.config.password == undefined) {
+        if (!this.config.password) {
             return Promise.reject("No password configured");
         }
 
@@ -69,7 +65,7 @@ module.exports = class OpenSprinklerController extends Controller {
 
         // unsubscribe from qtt
         if (this.mqttController !== undefined)
-            this.mqttController.extUnsubscribeTopic(this, null);
+            this.mqttController.extSubscribeTopic(this);
 
         /* Required ending */
         return await super.stop();
@@ -254,7 +250,7 @@ module.exports = class OpenSprinklerController extends Controller {
 
     /* init MQTT message handler, if needed */
     registerMqttController() {
-        this.log.notice("%1 [registerMqttController] started - %2", this, this.mqttController);
+        this.log.debug(5, "%1 [registerMqttController] started - %2", this, this.mqttController);
         if (this.mqttController === undefined) {
             try {
                 var mqttControllerId = this.config.mqtt_controller || 'mqtt';
@@ -280,7 +276,7 @@ module.exports = class OpenSprinklerController extends Controller {
 
     /* performOnEntity() is used to implement actions on entities */
     async performOnEntity(entity, actionName, params) {
-        this.log.notice("%1 [performOnEntity] %3 - %2 - %4", this, actionName, entity, params);
+        this.log.debug(5, "%1 [performOnEntity] %3 - %2 - %4", this, actionName, entity, params);
 
         switch (actionName) {
             case 'irrigation_zone.run':
@@ -300,10 +296,6 @@ module.exports = class OpenSprinklerController extends Controller {
             // x_opensprinkler
             case 'x_opensprinkler_raindelay.set':
                 return this.switchEntityAsync(entity, true, params?.hours);
-            case 'sys_system.restart':
-                this.mqttController = undefined;
-                this.refreshStatus();
-                return;
         }
 
         return super.performOnEntity(entity, actionName, params);
@@ -311,7 +303,7 @@ module.exports = class OpenSprinklerController extends Controller {
 
     /* calls the APIs to enable/disable zones and programs */
     async enableEntityAsync(e, state) {
-        this.log.notice("%1 enableEntityAsync(%2, %3, %4)", this, e, state);
+        this.log.debug(5, "%1 enableEntityAsync(%2, %3, %4)", this, e, state);
 
         // we're using power_switch.state since it's shared with controller
         var currentState = e.getAttribute('irrigation_zone.enabled');
@@ -390,7 +382,7 @@ module.exports = class OpenSprinklerController extends Controller {
 
     /* calls the APIs to turn on/off zones, programs, controller and rain delay */
     async switchEntityAsync(e, state, duration) {
-        this.log.notice("%1 switchEntityAsync(%2, %3, %4)", this, e, state, duration);
+        this.log.debug(5, "%1 switchEntityAsync(%2, %3, %4)", this, e, state, duration);
 
         var defaultDuration = this.config.default_zone_duration || 60;
 
@@ -523,8 +515,11 @@ module.exports = class OpenSprinklerController extends Controller {
             this.log.debug(5, "%1 [postCommandAsync] %2", this, response);
 
             // todo: integrate handleResponse
-            if (response.result == 1)
+            if (response?.result == 1)
                 this.updateEntityAttributes(e, attributes);
+            else {
+                this.sendError('Internal error for controller {1:q}: {0}. See logs. ', response?.result, this);
+            }
         }).catch(async err => {
             this.log.err("%1 [postCommandAsync] error: %2", this, err);
 
@@ -609,18 +604,18 @@ module.exports = class OpenSprinklerController extends Controller {
             };
 
             if (topic == "opensprinkler/raindelay") {
-                // mqtt messages does not contain duration: a refresh is needed
+                // mqtt message does not contain duration: a refresh is needed
                 needsRefresh = true;
             }
         }
         else {
-            this.log.notice("%1 [onMqttMessage] message ignored: %2, %3", this, topic, value);
+            this.log.debug(5, "%1 [onMqttMessage] message ignored: %2, %3", this, topic, value);
         }
 
         // update attributes
         this.updateEntityAttributes(e, attributes);
 
-        // OS mqtt message are very limited, so we need to request a refresh from API to sync everything
+        // OS mqtt messages are very limited, so we need to request a refresh from API to sync everything
         if (needsRefresh)
             this.refreshStatus();
     }
@@ -648,6 +643,7 @@ module.exports = class OpenSprinklerController extends Controller {
     mapDevice(id, name, capabilities, defaultAttribute, attributes) {
         this.log.debug(5, "%1 mapDevice(%2, %3, %4, %5, %6)", this, id, name, capabilities, defaultAttribute, attributes);
 
+        var isNew = false;
         let e = this.findEntity(id);
 
         try {
@@ -656,6 +652,7 @@ module.exports = class OpenSprinklerController extends Controller {
                 e = this.getEntity(className, id);
                 e.setName(name);
                 e.setType(className);
+                isNew = true;
             }
             // else {
             //     e.setName(name);
@@ -681,6 +678,9 @@ module.exports = class OpenSprinklerController extends Controller {
             if (defaultAttribute)
                 e.setPrimaryAttribute(defaultAttribute);
 
+            if (isNew)
+                this.sendNotice('Discovered new device {0:q} ({1}) on controller {2:q}', name, id, this);
+
             // extended capabilities
             // e.extendCapability(ns);
             // Object.keys(vars).forEach(v => {
@@ -695,8 +695,6 @@ module.exports = class OpenSprinklerController extends Controller {
 
     updateEntityAttributes(e, attributes) {
         if (e && attributes) {
-            var id = e.getCanonicalID();
-
             for (const attr in attributes) {
                 var newValue = attributes[attr];
 
@@ -709,6 +707,7 @@ module.exports = class OpenSprinklerController extends Controller {
                     // check for and skip unchanged values
                     var changed = value != newValue && JSON.stringify(value) != JSON.stringify(newValue);
                     if (changed) {
+                        var id = e.getCanonicalID();
                         this.log.notice("%1 [%2] %3: %4 => %5", this, id, attrName, newValue, value);
                         e.setAttribute(attrName, newValue);
                     }

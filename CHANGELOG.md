@@ -1,5 +1,10 @@
 # OpenSprinklerController Changelog
 
+## 221230
+
+* Fix for MQTT unsubscribe bug on stop
+* Support for sys_system.restart to force a refresh
+
 ## 221102
 
 * MQTT integration (requires MSR and MQTTController v 22305)

@@ -17,9 +17,12 @@ Change directory into the new *ext* directory:
 
 ```
 cd ext
+mdkir OpenSprinklerController
 ```
 
-Copy all the files. You're ready to run, since no external packages are required.
+Copy all the files in the new directory named *OpenSprinklerController*.
+Your final path should be */path/to/reactor/ext/OpenSprinklerController*.
+Now you're ready to run your new controller, since no external packages are required.
 
 From here, proceed to Basic Configuration below.
 

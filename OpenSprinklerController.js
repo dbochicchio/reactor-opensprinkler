@@ -6,7 +6,7 @@
  *  Disclaimer: Thi is beta software, so quirks anb bugs are expected. Please report back.
  */
 
-const version = 221101;
+const version = 221230;
 const className = "opensprinkler";
 const ns = "x_opensprinkler"
 const ignoredValue = "@@IGNORED@@"
@@ -39,11 +39,11 @@ module.exports = class OpenSprinklerController extends Controller {
 
     /** Start the controller. */
     async start() {
-        if (!this.config.host) {
+        if (this.config.host == undefined) {
             return Promise.reject("No host configured");
         }
 
-        if (!this.config.password) {
+        if (this.config.password == undefined) {
             return Promise.reject("No password configured");
         }
 
@@ -69,7 +69,7 @@ module.exports = class OpenSprinklerController extends Controller {
 
         // unsubscribe from qtt
         if (this.mqttController !== undefined)
-            this.mqttController.extSubscribeTopic(this);
+            this.mqttController.extUnsubscribeTopic(this, null);
 
         /* Required ending */
         return await super.stop();
@@ -300,6 +300,10 @@ module.exports = class OpenSprinklerController extends Controller {
             // x_opensprinkler
             case 'x_opensprinkler_raindelay.set':
                 return this.switchEntityAsync(entity, true, params?.hours);
+            case 'sys_system.restart':
+                this.mqttController = undefined;
+                this.refreshStatus();
+                return;
         }
 
         return super.performOnEntity(entity, actionName, params);
@@ -691,6 +695,8 @@ module.exports = class OpenSprinklerController extends Controller {
 
     updateEntityAttributes(e, attributes) {
         if (e && attributes) {
+            var id = e.getCanonicalID();
+
             for (const attr in attributes) {
                 var newValue = attributes[attr];
 
@@ -703,7 +709,6 @@ module.exports = class OpenSprinklerController extends Controller {
                     // check for and skip unchanged values
                     var changed = value != newValue && JSON.stringify(value) != JSON.stringify(newValue);
                     if (changed) {
-                        var id = e.getCanonicalID();
                         this.log.notice("%1 [%2] %3: %4 => %5", this, id, attrName, newValue, value);
                         e.setAttribute(attrName, newValue);
                     }

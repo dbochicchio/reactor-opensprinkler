@@ -6,7 +6,7 @@
  *  Disclaimer: Thi is beta software, so quirks anb bugs are expected. Please report back.
  */
 
-const version = 25313;
+const version = 24313;
 const className = "opensprinkler";
 const ns = "x_opensprinkler"
 const ignoredValue = "@@IGNORED@@"

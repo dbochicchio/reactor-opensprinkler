@@ -75,12 +75,10 @@ At the moment, you can:
  - operate zones and programs
  - enable/disable the controller (via power_switch)
  - enable/disable programs and zones
- - see rain delay
- - set rain delay programmatically (ie: from your own rain sensors/weather station)
+ - see and set rain delay programmatically (ie: from your own rain sensors/weather station)
  - see water level
  - see additional sensors status (if present)
- - set rain delay to a personalized amount of hours (added in 20221101)
- - MQTT support (added in 20221102, needs last version of both MSR and MQTTController)
+ - MQTT support to support push-based updates instead of polling (added in 20221102, needs last version of both MSR and MQTTController)
 
 On my TODO list:
  - get programs status in a more reliable way (WIP)

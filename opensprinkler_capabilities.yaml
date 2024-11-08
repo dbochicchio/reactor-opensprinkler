@@ -1,13 +1,13 @@
 # opensprinkler_capabilities.yaml
 #
-# Copyright (C) 2022 Daniele Bochicchio, All Rights Reserved
+# Copyright (C) 2022/2024 Daniele Bochicchio, All Rights Reserved
 #
 # *** IMPORTANT ***
 # This is a system file. DO NOT place overrides or make modifications here.
 # You can add your own capabilities by adding a "capabilities" section to
 # your own local_mqtt_capabilities.yaml file in your config directory.
 ---
-version: 221101
+version: 25313
 revision: 1
 format: 1
 

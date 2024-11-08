@@ -1,22 +1,25 @@
 /** A Reactor controller for OpenSprinkler.
- *  Copyright (c) 2022 Daniele Bochicchio, All Rights Reserved.
+ *  Copyright (c) 2022/2024 Daniele Bochicchio, All Rights Reserved.
  *  OpenSprinklerController is offered under MIT License - https://mit-license.org/
  *  More info: https://github.com/dbochicchio/reactor-opensprinkler
  *
  *  Disclaimer: Thi is beta software, so quirks anb bugs are expected. Please report back.
  */
 
-const version = 221104;
+const version = 25313;
 const className = "opensprinkler";
 const ns = "x_opensprinkler"
 const ignoredValue = "@@IGNORED@@"
 
 const Controller = require("server/lib/Controller");
+const Capabilities = require("server/lib/Capabilities");
 
 const Logger = require("server/lib/Logger");
 Logger.getLogger('OpenSprinklerController', 'Controller').always("Module OpenSprinklerController v%1", version);
 
 const Configuration = require("server/lib/Configuration");
+
+const util = require("server/lib/util");
 
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
@@ -65,7 +68,7 @@ module.exports = class OpenSprinklerController extends Controller {
 
         // unsubscribe from qtt
         if (this.mqttController !== undefined)
-            this.mqttController.extSubscribeTopic(this);
+            this.mqttController.extUnsubscribeTopic(this, null);
 
         /* Required ending */
         return await super.stop();
@@ -141,9 +144,9 @@ module.exports = class OpenSprinklerController extends Controller {
                             "toggle.state": state,
                             "_ns_.id": index,
                             "_ns_.type": "program",
-                            "_ns_.programflag": pd[0],
-                            "_ns_.programdata": pd[4], //?.join(',') || '',
-                            "_ns_.weather": ((pd[0] >> 1) & 1) ? true : false
+                            "_ns_.program_flag": pd[0],
+                            "_ns_.program_data": pd[4], //?.join(',') || '',
+                            "_ns_.weather_adjustment": ((pd[0] >> 1) & 1) ? true : false
                             // "_ns_.days_even": (((pd[0] >> 2) & 0x03) === 2),
                             // "_ns_.days_odd": (((pd[0] >> 2) & 0x03) === 1),
                             // "_ns_.days_hasinterval": (((pd[0] >> 4) & 0x03) === 3),
@@ -165,31 +168,37 @@ module.exports = class OpenSprinklerController extends Controller {
             this.mapSensorDevice("1", response?.settings?.sn1, response?.settings?.sn1t, response?.settings?.sn1o);
             this.mapSensorDevice("2", response?.settings?.sn2, response?.settings?.sn2t, response?.settings?.sn2o);
 
-            this.mapDevice("os_waterlevel", "Water Level", ["string_sensor", ns], "string_sensor.value",
+            this.mapDevice("os_waterlevel", "Water Level", ["value_sensor", ns], "value_sensor.value",
                 {
-                    "string_sensor.value": response?.options?.wl || 0,
-                    "string_sensor.units": "%",
+                    "value_sensor.value": response?.options?.wl || 0,
+                    "value_sensor.units": "%",
                     "_ns_.type": "waterlevel",
                 });
 
             // controller status
             var lrun = response?.settings?.lrun;
+            var isOn = response?.settings?.en == 1 && response?.options?.den != 0;
 
-            this.mapDevice("system", 'Open Sprinkler', ["power_switch", "toggle", "string_sensor", ns], "string_sensor.value",
+            this.mapDevice("system", response?.dname ?? 'Open Sprinkler', ["power_switch", "toggle", "string_sensor", "wifi_status", "sys_system", ns], "string_sensor.value",
                 {
-                    "power_switch.state": (response?.settings?.en || response?.options?.den == 0) == 1,
-                    "toggle.state": (response?.settings?.en || response?.options?.den == 0) == 1,
-                    "string_sensor.value": (response?.settings?.en || response?.options?.den == 0) == 1 ? "Enabled" : "Disabled",
+                    "power_switch.state": isOn,
+                    "toggle.state": isOn,
+                    "string_sensor.value": isOn ? "Enabled" : "Disabled",
+
                     "_ns_.type": "controller",
                     "_ns_.current": (response?.settings?.curr || 0),
-                    "_ns_.hardwareVersion": this.getHardwareVersion(response?.options?.hwv, response?.options?.hwt),
-                    "_ns_.weatheradjustmentmode": (response?.settings?.uwt || 0),
-                    "_ns_.rssi": (response?.settings?.RSSI),
-                    "_ns_.firmwareversion": (response?.options?.fwv || '0'),
-                    "_ns_.lastboot": (response?.settings?.lupt || 0),
-                    "_ns_.lastbootreason": (response?.settings?.lrbtc || 0),
+                    "_ns_.version_hardware": this.getHardwareVersion(response?.options?.hwv, response?.options?.hwt),
+                    "_ns_.weather_adjustment_mode": (response?.settings?.uwt || 0),
+                    "_ns_.version_firmware": (response?.options?.fwv || '0'),
+                    "_ns_.last_boot": (response?.settings?.lupt || 0),
+                    "_ns_.last_boot_reason": (response?.settings?.lrbtc || 0),
                     "_ns_.boards": (response?.settings?.nbrd || 1),
-                    "_ns_.lastrun": (lrun)
+                    "_ns_.last_run": (lrun),
+
+                    "_ns_.rssi": (response?.settings?.RSSI), // deprecated
+                    "wifi_status.rssi": (response?.settings?.RSSI),
+                    "wifi_status.station_ip": (response?.options?.ip1 + '.' + response?.options?.ip2 + '.' + response?.options?.ip3 + '.' + response?.options?.ip4)
+                    //"wifi_status.ssid":(response?.settings?.SSID),
                 });
 
             // update last run in child
@@ -296,6 +305,10 @@ module.exports = class OpenSprinklerController extends Controller {
             // x_opensprinkler
             case 'x_opensprinkler_raindelay.set':
                 return this.switchEntityAsync(entity, true, params?.hours);
+            case 'sys_system.restart':
+                this.mqttController = undefined;
+                this.refreshStatus();
+                return;
         }
 
         return super.performOnEntity(entity, actionName, params);
@@ -305,7 +318,7 @@ module.exports = class OpenSprinklerController extends Controller {
     async enableEntityAsync(e, state) {
         this.log.debug(5, "%1 enableEntityAsync(%2, %3, %4)", this, e, state);
 
-        // we're using power_switch.state since it's shared with controller
+        // get current state
         var currentState = e.getAttribute('irrigation_zone.enabled');
 
         // toggle
@@ -496,7 +509,7 @@ module.exports = class OpenSprinklerController extends Controller {
         // o {"result":18} Data Format Error (e.g. provided data does not match required format)
         // o {"result":19} RF code error (e.g. RF code does not match required format)
         // o {"result":32} Page Not Found (e.g. page not found or requested file missing)
-        // o {"result":48} Not Permitted (e.g. cannot operate on the requested station
+        // o {"result":48} Not Permitted (e.g. cannot operate on the requested station)
     }
 
     async postCommandAsync(url, params, e, attributes, failures) {
@@ -630,7 +643,11 @@ module.exports = class OpenSprinklerController extends Controller {
             ● sn2t/sn2o: Sensor 2 type and sensor 2 option (similar to sn1t and sn1o, for OS 3.0 only).
             */
             this.mapDevice(`os_sensor${id}`,
-                sensorType == 3 ? "Soil Sensor" : sensorType == 1 ? "Rain Sensor" : sensorType == 2 ? "Flow Sensor" : sensorType == 240 ? "Program Switch" : `Sensor ${id}`,
+                sensorType == 3 ? "Soil Sensor" : 
+                sensorType == 1 ? "Rain Sensor" : 
+                sensorType == 2 ? "Flow Sensor" : 
+                sensorType == 240 ? "Program Switch" :
+                 `Sensor ${id}`,
                 ["binary_sensor", ns], "binary_sensor.state",
                 {
                     "binary_sensor.state": (status || 0) == sensorOptions,
@@ -654,10 +671,6 @@ module.exports = class OpenSprinklerController extends Controller {
                 e.setType(className);
                 isNew = true;
             }
-            // else {
-            //     e.setName(name);
-            //     e.setType(className);
-            // }
 
             e.deferNotifies(true);
             e.markDead(false);
@@ -665,12 +678,15 @@ module.exports = class OpenSprinklerController extends Controller {
             // capabilities
             if (capabilities) {
                 this.log.debug(5, "%1 [%2] adding capabilities: %3", this, id, capabilities);
-                capabilities.forEach(c => {
-                    if (!e.hasCapability(c)) {
-                        this.log.debug(5, "%1 [%2] adding capability %3", this, id, c);
-                        e.extendCapability(c);
-                    }
-                });
+                e.extendCapabilities(capabilities);
+
+                // Check controller and system capabilities versions for changes
+                const vinfo = { ...Capabilities.getSysInfo(), controller: version };
+                const hash = util.hash(JSON.stringify(vinfo));
+                if (e._hash !== hash) {
+                    e.refreshCapabilities();
+                    e._hash = hash;
+                }
             }
 
             this.updateEntityAttributes(e, attributes);
@@ -680,12 +696,6 @@ module.exports = class OpenSprinklerController extends Controller {
 
             if (isNew)
                 this.sendNotice('Discovered new device {0:q} ({1}) on controller {2:q}', name, id, this);
-
-            // extended capabilities
-            // e.extendCapability(ns);
-            // Object.keys(vars).forEach(v => {
-            //     e.setAttribute(`{ns}.${v.replace(".", "_")}`, vars[v]);
-            // });
         } catch (err) {
             this.log.err("%1 [mapDevice] error: %2", this, err);
         } finally {
@@ -695,6 +705,9 @@ module.exports = class OpenSprinklerController extends Controller {
 
     updateEntityAttributes(e, attributes) {
         if (e && attributes) {
+            e.deferNotifies(true);
+            e.markDead(false);
+
             for (const attr in attributes) {
                 var newValue = attributes[attr];
 
@@ -708,11 +721,13 @@ module.exports = class OpenSprinklerController extends Controller {
                     var changed = value != newValue && JSON.stringify(value) != JSON.stringify(newValue);
                     if (changed) {
                         var id = e.getCanonicalID();
-                        this.log.notice("%1 [%2] %3: %4 => %5", this, id, attrName, newValue, value);
+                        this.log.debug(5, "%1 [%2] %3: %4 => %5", this, id, attrName, newValue, value);
                         e.setAttribute(attrName, newValue);
                     }
                 }
-            };
+            }
+
+            e.deferNotifies(false);
         }
     }
 

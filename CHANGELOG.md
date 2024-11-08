@@ -1,5 +1,22 @@
 # OpenSprinklerController Changelog
 
+# 25313
+
+* Update logic for entities. Refactoring.
+
+## 240405
+
+* Fix for wrong controller status.
+
+## 230112
+
+* Better update logic for attributes.
+
+## 221230
+
+* Fix for MQTT unsubscribe bug on stop
+* Support for sys_system.restart to force a refresh
+
 ## 221104
 
 * UI Notifications for discovered devices and communication errors

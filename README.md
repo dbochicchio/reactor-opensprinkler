@@ -29,6 +29,7 @@ From here, proceed to Basic Configuration below.
 ## Basic Configuration
 
 In order to use OpenSprinklerController, you have to add an entry for it to the controllers section of your *reactor.yaml* file.
+For information on how to configure OpenSprinkler MQTT and its events, got to [support page](https://openthings.freshdesk.com/support/solutions/articles/5000859089-how-to-use-mqtt).
 
 ```
 controllers:
@@ -45,6 +46,9 @@ controllers:
 
       # default hash for opendoor
       password: "a6d82bced638de3def1e9bbb4983225c"
+
+      # topic as configured in options
+      topic: os/ABCD
 
       # MSR MQTT Controller ID for MQTT integration
       #mqtt_controller: mqtt
@@ -88,4 +92,4 @@ On my TODO list:
  
 ## Support
 
-This is beta software, so expect quirks and bugs. Support is provided via https://smarthome.community/.
+This is beta software, so expect quirks and bugs. Support is provided via [SmartHome Community](https://smarthome.community/).

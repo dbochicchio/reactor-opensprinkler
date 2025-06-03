@@ -1,8 +1,16 @@
 # OpenSprinklerController Changelog
 
+# 25154
+
+* New OS firmware 2.2.1. Station state fix.
+
+# 24338
+
+* Support for dead entities.
+
 # 24313
 
-* Update logic for entities. Refactoring.
+* Updated logic for entities. Refactoring.
 
 ## 240405
 

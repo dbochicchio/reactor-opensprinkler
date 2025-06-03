@@ -1,6 +1,6 @@
 {
 	"name": "reactor-opensprinkler",
-	"version": "0.1.240405",
+	"version": "1.0.25154",
 	"description": "Reactor Add-on: OpenSprinkler",
 	"homepage": "https://github.com/dbochicchio/reactor-opensprinkler",
 	"main": "./OpenSprinklerController.js",

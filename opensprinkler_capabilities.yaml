@@ -7,7 +7,7 @@
 # You can add your own capabilities by adding a "capabilities" section to
 # your own local_mqtt_capabilities.yaml file in your config directory.
 ---
-version: 24313
+version: 24338
 revision: 1
 format: 1
 
